@@ -10,6 +10,14 @@ A company can use this platform to centralize internal policies, support procedu
 
 The included demo scenario uses a fictional Hong Kong fintech company, HarbourBridge Digital Finance Limited. Demo documents live in `data/demo_documents`, and the golden QA set lives in `data/eval_sets/fintech_knowledge_eval.json`.
 
+## Operating Modes
+
+| Mode | Storage | Vector Store | Queue | Best For |
+| --- | --- | --- | --- | --- |
+| Lightweight local demo | SQLite | In-memory process store | Eager/local ingestion | Fast development and tests. Vectors are lost after backend restart. |
+| Persistent local enterprise mode | PostgreSQL | Qdrant named Docker volume | Redis + Celery | Recruiter demos and realistic local operation that survives backend restarts. |
+| Full Docker Compose mode | PostgreSQL | Qdrant | Redis + Celery | Production-like local stack with separate backend, worker, frontend, database, cache, and vector services. |
+
 ## Architecture
 
 ```mermaid
@@ -212,6 +220,134 @@ The Docker path runs:
 
 The backend container runs `alembic upgrade head` before starting Uvicorn.
 
+## Persistent Local Enterprise Mode
+
+Persistent local enterprise mode is the recommended demo path when using LM Studio and the Qwen model. It uses:
+
+- PostgreSQL for durable users, workspaces, documents, feedback, audit logs, and evaluation results.
+- Qdrant for durable vectors.
+- Redis and Celery for asynchronous document ingestion.
+- FastAPI backend and Streamlit frontend in Docker.
+- LM Studio running on the Windows host as an OpenAI-compatible LLM server.
+- Local deterministic embeddings at 384 dimensions to avoid local embedding model compatibility issues.
+
+The lightweight `VECTOR_STORE=memory` mode stores vectors inside the backend process. That is useful for tests, but vectors disappear after backend restart. Qdrant fixes this by storing vectors in the `qdrant_data` Docker volume.
+
+### Start LM Studio
+
+1. Open LM Studio on Windows.
+2. Load the Qwen model.
+3. Start the Local Server on port `1234`.
+4. Confirm the model appears at:
+
+```powershell
+Invoke-WebRequest http://localhost:1234/v1/models -UseBasicParsing
+```
+
+The persistent config expects this exact model id:
+
+```text
+qwen/qwen3.6-27b
+```
+
+Inside Docker containers, do not use `localhost` for LM Studio. The backend and Celery worker must call the Windows host through:
+
+```text
+http://host.docker.internal:1234/v1
+```
+
+### Start Persistent Mode
+
+PowerShell:
+
+```powershell
+.\scripts\start_persistent.ps1
+```
+
+The script copies `.env.persistent.example` to `.env` only if `.env` does not already exist, then runs:
+
+```powershell
+docker compose up --build
+```
+
+Manual equivalent:
+
+```powershell
+Copy-Item .env.persistent.example .env
+docker compose up --build
+```
+
+### Verify Persistent Services
+
+In a second PowerShell window:
+
+```powershell
+.\scripts\check_persistent_demo.ps1
+```
+
+The script checks:
+
+- FastAPI health at `http://localhost:8000/health`.
+- Qdrant at `http://localhost:6333`.
+- LM Studio models at `http://localhost:1234/v1/models`.
+- Whether `qwen/qwen3.6-27b` is available.
+
+### Demo Walkthrough
+
+1. Open Streamlit: http://localhost:8501
+2. Register an admin user such as `admin@harbourbridge.example`.
+3. Create workspace `HarbourBridge Knowledge Base`.
+4. Upload the files under `data/demo_documents`.
+5. Wait until document status becomes `completed`.
+6. Ask:
+
+```text
+What documents are required for customer onboarding under the KYC policy?
+```
+
+Expected result:
+
+- Model: `qwen/qwen3.6-27b`
+- Citations: greater than `0`
+- Confidence: greater than `0`
+- Source document should include KYC or compliance policy content.
+
+If citations are `0`, use the retrieval debug endpoint from the Retrieval Debugging section.
+
+### Restart Without Losing Data
+
+To stop containers without deleting data:
+
+```powershell
+.\scripts\stop_persistent.ps1
+```
+
+or:
+
+```powershell
+docker compose down
+```
+
+Then restart:
+
+```powershell
+.\scripts\start_persistent.ps1
+```
+
+PostgreSQL data persists in the `postgres_data` Docker volume. Qdrant vectors persist in the `qdrant_data` Docker volume. Uploaded files persist in the `uploaded_files` Docker volume.
+
+Warning: this command deletes persistent data:
+
+```powershell
+docker compose down -v
+```
+
+Use the reset script only when you intentionally want a clean slate:
+
+```powershell
+.\scripts\reset_persistent_data.ps1
+```
+
 ## Running Tests
 
 PowerShell:
@@ -228,7 +364,7 @@ The tests use SQLite and the in-memory vector store, so they do not require Dock
 
 Current verified status:
 
-- `pytest`: 10 tests passing.
+- `pytest`: 13 tests passing.
 - `python -m compileall backend frontend`: passing.
 
 ## Demo Flow
@@ -304,6 +440,74 @@ curl.exe -X POST http://localhost:8000/debug/workspaces/<workspace-id>/retrieval
 ```
 
 The retrieval test returns embedding metadata, raw chunk scores, filenames, snippets, and whether each chunk passed `RAG_MIN_SCORE`.
+
+## Troubleshooting
+
+### `I do not know based on the available workspace documents.`
+
+Common causes:
+
+- Documents have not been uploaded to the current workspace.
+- Celery ingestion has not completed, so document status is still `pending` or `processing`.
+- The question is being asked in the wrong workspace.
+- Qdrant is not running or the backend is configured with the wrong `QDRANT_URL`.
+- Vectors were not written because the worker has different environment settings from the backend.
+- `RAG_MIN_SCORE` is too high and all retrieved chunks are filtered out.
+- `VECTOR_STORE=memory` was used and the backend restarted, losing in-memory vectors.
+
+Checks:
+
+```powershell
+curl.exe -H "Authorization: Bearer <token>" http://localhost:8000/debug/workspaces/<workspace-id>/documents
+curl.exe -X POST http://localhost:8000/debug/workspaces/<workspace-id>/retrieval-test `
+  -H "Authorization: Bearer <token>" `
+  -H "Content-Type: application/json" `
+  -d '{"question":"What documents are required for customer onboarding under the KYC policy?","top_k":8}'
+```
+
+### LM Studio `400 Bad Request`
+
+Common causes:
+
+- Wrong `LLM_MODEL` value. Persistent mode expects `qwen/qwen3.6-27b`.
+- The model is not loaded in LM Studio.
+- LM Studio Local Server is not started.
+- The OpenAI-compatible payload is unsupported by the selected model/server version.
+- The request context is too long for the loaded model configuration.
+
+Checks:
+
+```powershell
+Invoke-WebRequest http://localhost:1234/v1/models -UseBasicParsing
+```
+
+Confirm `.env` contains:
+
+```env
+LLM_PROVIDER=openai-compatible
+LLM_BASE_URL=http://host.docker.internal:1234/v1
+LLM_API_KEY=lm-studio
+LLM_MODEL=qwen/qwen3.6-27b
+LLM_TIMEOUT_SECONDS=240
+```
+
+### Docker Cannot Reach LM Studio
+
+Cause: using `localhost` from inside Docker. Inside a container, `localhost` is the container itself, not the Windows host.
+
+Use:
+
+```env
+LLM_BASE_URL=http://host.docker.internal:1234/v1
+```
+
+From the Windows host, verify LM Studio with:
+
+```powershell
+Invoke-WebRequest http://localhost:1234/v1/models -UseBasicParsing
+```
+
+From Docker containers, the backend uses `host.docker.internal`.
 
 ## Security And Governance
 
