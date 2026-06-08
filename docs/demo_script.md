@@ -21,6 +21,8 @@ $env:DATABASE_URL = "sqlite:///./local.db"
 $env:VECTOR_STORE = "memory"
 $env:AUTO_CREATE_TABLES = "true"
 $env:OTEL_ENABLED = "false"
+$env:RAG_TOP_K = "8"
+$env:RAG_MIN_SCORE = "0"
 uvicorn backend.app.main:app --reload
 ```
 
@@ -70,6 +72,8 @@ Upload the files in `data/demo_documents`:
 - `Employee_Onboarding_AI_Tools.md`
 
 If using Docker Compose, ingestion runs through the Celery worker. If using the lightweight local SQLite path, run the backend with `CELERY_TASK_ALWAYS_EAGER=true` or start a Redis-backed worker.
+
+Note: with `VECTOR_STORE=memory`, vectors are lost after backend restart. Re-upload or re-ingest demo documents after restarting, or use Qdrant through Docker Compose.
 
 ## 5. Wait For Ingestion
 
@@ -183,4 +187,3 @@ This is positioned as an enterprise RAG platform, not a chatbot demo:
 - Audit logs and feedback.
 - Evaluation dataset and batch metrics.
 - Docker Compose deployment path.
-

@@ -135,8 +135,12 @@ $env:VECTOR_STORE = "memory"
 $env:AUTO_CREATE_TABLES = "true"
 $env:OTEL_ENABLED = "false"
 $env:CELERY_TASK_ALWAYS_EAGER = "true"
+$env:RAG_TOP_K = "8"
+$env:RAG_MIN_SCORE = "0"
 uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+When `VECTOR_STORE=memory`, vectors are stored only in the backend process. After a backend restart, previously uploaded document metadata may still exist in SQLite, but vectors are gone and documents must be re-ingested or re-uploaded. Use Qdrant for persistent retrieval.
 
 Run the Streamlit frontend in a second PowerShell window:
 
@@ -271,6 +275,36 @@ For LM Studio or Ollama, point `LLM_BASE_URL` and `EMBEDDING_BASE_URL` to the lo
 
 If `EMBEDDING_DIMENSION` changes, use a fresh `QDRANT_COLLECTION` or recreate the existing Qdrant collection.
 
+## Retrieval Debugging
+
+For local LM Studio or Ollama demos, start with:
+
+```env
+RAG_TOP_K=8
+RAG_MIN_SCORE=0
+```
+
+If answers say `I do not know based on the available workspace documents`, check:
+
+1. Documents are ingested and show non-zero chunks.
+2. Backend and worker use the same `VECTOR_STORE`, embedding provider, and embedding dimension.
+3. Qdrant collection exists and was not created with a different vector dimension.
+4. `VECTOR_STORE=memory` has not lost vectors after a backend or worker restart.
+5. `RAG_MIN_SCORE` is not filtering all retrieved chunks.
+
+Debug endpoints require workspace admin:
+
+```powershell
+curl.exe -H "Authorization: Bearer <token>" http://localhost:8000/debug/workspaces/<workspace-id>/documents
+
+curl.exe -X POST http://localhost:8000/debug/workspaces/<workspace-id>/retrieval-test `
+  -H "Authorization: Bearer <token>" `
+  -H "Content-Type: application/json" `
+  -d '{"question":"What documents are required for customer onboarding under the KYC policy?","top_k":8}'
+```
+
+The retrieval test returns embedding metadata, raw chunk scores, filenames, snippets, and whether each chunk passed `RAG_MIN_SCORE`.
+
 ## Security And Governance
 
 See `docs/security_and_governance.md` for:
@@ -317,4 +351,3 @@ Safe demo documents under `data/demo_documents` and eval sets under `data/eval_s
 - Add background evaluation scheduling and quality regression alerts.
 - Add OpenTelemetry Collector, dashboards, and secure trace export.
 - Add production deployment manifests for cloud environments.
-

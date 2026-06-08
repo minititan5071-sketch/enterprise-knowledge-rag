@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AnyHttpUrl, Field
+from pydantic import AnyHttpUrl, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,8 +45,8 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.0
     llm_timeout_seconds: int = 45
 
-    rag_top_k: int = 5
-    rag_min_score: float = 0.18
+    rag_top_k: int = 8
+    rag_min_score: float = 0.0
     chunk_size_chars: int = 1200
     chunk_overlap_chars: int = 180
 
@@ -55,6 +55,19 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: AnyHttpUrl | None = None
 
     frontend_backend_url: str = "http://backend:8000"
+
+    @field_validator(
+        "qdrant_api_key",
+        "embedding_api_key",
+        "llm_api_key",
+        "otel_exporter_otlp_endpoint",
+        mode="before",
+    )
+    @classmethod
+    def empty_string_to_none(cls, value):
+        if value == "":
+            return None
+        return value
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -72,4 +85,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

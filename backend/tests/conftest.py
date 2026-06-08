@@ -33,6 +33,10 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
     settings.upload_dir = tmp_path / "uploads"
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     settings.vector_store = "memory"
+    settings.embedding_provider = "local"
+    settings.llm_provider = "local"
+    settings.rag_min_score = 0.0
+    settings.rag_top_k = 8
     _MEMORY_POINTS.clear()
 
     def override_get_db():
@@ -44,6 +48,7 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
+        test_client.db_session_factory = TestingSessionLocal
         yield test_client
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
@@ -77,4 +82,3 @@ def create_workspace(client: TestClient, headers: dict[str, str], name: str = "K
     )
     assert response.status_code == 201, response.text
     return response.json()
-

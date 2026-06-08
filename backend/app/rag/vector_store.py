@@ -4,6 +4,7 @@ from typing import Any
 from uuid import uuid5, NAMESPACE_URL
 
 from backend.app.core.config import settings
+from backend.app.core.logging import get_logger
 from backend.app.rag.chunking import Chunk
 
 try:
@@ -16,6 +17,9 @@ except Exception:  # pragma: no cover - Qdrant is optional in local unit tests
 
 
 _MEMORY_POINTS: list[dict[str, Any]] = []
+_MEMORY_WARNING_EMITTED = False
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -26,9 +30,19 @@ class SearchHit:
 
 class VectorStore:
     def __init__(self) -> None:
+        global _MEMORY_WARNING_EMITTED
         self.use_memory = settings.vector_store == "memory" or QdrantClient is None
         self.collection = settings.qdrant_collection
         self.client = None
+        if self.use_memory and not _MEMORY_WARNING_EMITTED:
+            reason = "VECTOR_STORE=memory" if settings.vector_store == "memory" else "qdrant_client_unavailable"
+            logger.warning(
+                "memory_vector_store_enabled",
+                reason=reason,
+                persistence="vectors_are_process_local_and_lost_after_backend_restart",
+                action="re_ingest_documents_after_restart_or_use_qdrant_for_persistent_vectors",
+            )
+            _MEMORY_WARNING_EMITTED = True
         if not self.use_memory:
             self.client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
 
@@ -122,4 +136,3 @@ def _cosine(left: list[float], right: list[float]) -> float:
     left_norm = math.sqrt(sum(a * a for a in left)) or 1.0
     right_norm = math.sqrt(sum(b * b for b in right)) or 1.0
     return numerator / (left_norm * right_norm)
-
