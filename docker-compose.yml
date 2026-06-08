@@ -56,6 +56,12 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   celery-worker:
     build:
@@ -73,11 +79,21 @@ services:
       - ./data:/app/data
     depends_on:
       backend:
-        condition: service_started
+        condition: service_healthy
       redis:
         condition: service_healthy
       qdrant:
         condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "celery -A backend.app.core.celery_app.celery_app inspect ping --timeout=10 >/dev/null",
+        ]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 45s
 
   frontend:
     build:
@@ -89,9 +105,18 @@ services:
       - "8501:8501"
     depends_on:
       backend:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=3)\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
 volumes:
   postgres_data:
   qdrant_data:
-

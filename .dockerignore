@@ -2,8 +2,14 @@
 .venv
 .tmp
 .pytest_cache
+.ruff_cache
+.mypy_cache
 __pycache__
 *.pyc
 .env
+*.sqlite
+*.sqlite3
+*.db
+*.log
 data/uploads/*
 !data/uploads/.gitkeep

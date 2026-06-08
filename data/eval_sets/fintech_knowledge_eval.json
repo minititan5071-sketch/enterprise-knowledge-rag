@@ -1,0 +1,105 @@
+{
+  "name": "fintech_knowledge_eval",
+  "description": "Synthetic golden QA set for the HarbourBridge Digital Finance internal knowledge demo.",
+  "items": [
+    {
+      "question": "What documents are required for customer onboarding under the KYC policy?",
+      "required_facts": [
+        "identity document",
+        "proof of address",
+        "business registration certificate",
+        "ownership and control structure chart",
+        "sanctions, PEP, and adverse media screening"
+      ],
+      "expected_source_document": "KYC_Procedure_Manual.md",
+      "expected_keywords": ["beneficial owners", "source of funds", "account activation"],
+      "category": "compliance"
+    },
+    {
+      "question": "What should support agents do when a customer reports a failed transfer?",
+      "required_facts": [
+        "verify the customer's identity",
+        "confirm the transfer reference",
+        "check the payment status",
+        "escalate to Payments Operations",
+        "escalate to Compliance when blocked for sanctions, fraud, suspicious activity, or due diligence"
+      ],
+      "expected_source_document": "Customer_Support_SOP.md",
+      "expected_keywords": ["failed transfer", "30 minutes", "support ticket"],
+      "category": "customer_support"
+    },
+    {
+      "question": "What is the incident response process for suspected data leakage?",
+      "required_facts": [
+        "open an incident record",
+        "preserve evidence",
+        "contain exposure",
+        "identify data types involved",
+        "notify the Data Protection Lead and Legal"
+      ],
+      "expected_source_document": "Incident_Response_Playbook.md",
+      "expected_keywords": ["Compliance", "customer personal data", "root cause analysis"],
+      "category": "security"
+    },
+    {
+      "question": "What are the rules for using GenAI tools internally?",
+      "required_facts": [
+        "use approved internal GenAI tools",
+        "do not enter restricted data",
+        "verify generated answers against cited sources",
+        "report unsafe, incorrect, or uncited answers",
+        "do not use GenAI for automated customer eligibility decisions without approved governance"
+      ],
+      "expected_source_document": "IT_Security_Policy.md",
+      "expected_keywords": ["public GenAI tools", "restricted data", "feedback workflow"],
+      "category": "ai_governance"
+    },
+    {
+      "question": "Which vendor risks require escalation?",
+      "required_facts": [
+        "customer personal data outside approved locations",
+        "missing breach notification obligations",
+        "no evidence of access control, encryption, or vulnerability management",
+        "undisclosed subcontractors",
+        "critical service without tested business continuity plans"
+      ],
+      "expected_source_document": "Vendor_Risk_Management_Guide.md",
+      "expected_keywords": ["Risk and Compliance", "adverse media", "production access"],
+      "category": "vendor_risk"
+    },
+    {
+      "question": "How are payment approvals configured for the business wallet?",
+      "required_facts": [
+        "approval rules by amount, currency, and payment type",
+        "one approver for transfers below HKD 50,000",
+        "two approvers for transfers at or above HKD 50,000"
+      ],
+      "expected_source_document": "Digital_Banking_Product_FAQ.md",
+      "expected_keywords": ["workspace admins", "payment approvals", "HKD 50,000"],
+      "category": "product"
+    },
+    {
+      "question": "How often must privileged production access be reviewed?",
+      "required_facts": [
+        "privileged access must be approved by the system owner",
+        "reviewed quarterly",
+        "shared accounts are prohibited"
+      ],
+      "expected_source_document": "IT_Security_Policy.md",
+      "expected_keywords": ["single sign-on", "multi-factor authentication", "role-based access"],
+      "category": "security"
+    },
+    {
+      "question": "What training must new employees complete before using internal AI tools with confidential information?",
+      "required_facts": [
+        "AI acceptable-use training",
+        "security awareness training",
+        "privacy training",
+        "role-specific system access review"
+      ],
+      "expected_source_document": "Employee_Onboarding_AI_Tools.md",
+      "expected_keywords": ["new employees", "confidential information", "approved AI tools"],
+      "category": "ai_governance"
+    }
+  ]
+}

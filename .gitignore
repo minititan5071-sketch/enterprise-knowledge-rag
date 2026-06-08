@@ -1,13 +1,48 @@
+# Environment and secrets
 .env
-.venv/
-.tmp/
-.pytest_cache/
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Python
 __pycache__/
 *.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
 
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local runtime files
+.tmp/
+*.log
+logs/
+*.pid
+*.sqlite
+*.sqlite3
+*.db
+local.db
+
+# Docker and local volumes
+postgres_data/
+qdrant_data/
+
+# Uploaded/private documents
 data/uploads/*
 !data/uploads/.gitkeep
 
-.coverage
-htmlcov/
-
+# OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
