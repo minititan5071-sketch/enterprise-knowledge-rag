@@ -1,5 +1,6 @@
 import time
 
+from fastapi import HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -11,7 +12,7 @@ from backend.app.models.document import Document
 from backend.app.models.user import User
 from backend.app.rag.embeddings import EmbeddingClient
 from backend.app.rag.llm import LLMClient
-from backend.app.rag.vector_store import SearchHit, VectorStore
+from backend.app.rag.vector_store import SearchHit, VectorStore, VectorStoreError
 from backend.app.schemas.query import Citation, QueryRequest, QueryResponse
 
 logger = get_logger(__name__)
@@ -37,7 +38,19 @@ class QueryService:
             min_score=settings.rag_min_score,
         )
         query_vector = self.embeddings.embed_query(payload.question)
-        hits = self.vector_store.search(payload.workspace_id, query_vector, top_k)
+        try:
+            hits = self.vector_store.search(payload.workspace_id, query_vector, top_k)
+        except VectorStoreError as exc:
+            logger.error(
+                "rag_vector_store_error",
+                workspace_id=payload.workspace_id,
+                question=payload.question,
+                error=str(exc),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(exc),
+            ) from exc
         logger.info(
             "rag_chunks_retrieved",
             workspace_id=payload.workspace_id,
@@ -117,7 +130,19 @@ class QueryService:
         ensure_workspace_role(self.db, actor.id, workspace_id, "admin")
         effective_top_k = top_k or settings.rag_top_k
         query_vector = self.embeddings.embed_query(question)
-        hits = self.vector_store.search(workspace_id, query_vector, effective_top_k)
+        try:
+            hits = self.vector_store.search(workspace_id, query_vector, effective_top_k)
+        except VectorStoreError as exc:
+            logger.error(
+                "rag_retrieval_debug_vector_store_error",
+                workspace_id=workspace_id,
+                question=question,
+                error=str(exc),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(exc),
+            ) from exc
         logger.info(
             "rag_retrieval_debug",
             workspace_id=workspace_id,

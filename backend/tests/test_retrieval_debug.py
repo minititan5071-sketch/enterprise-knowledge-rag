@@ -121,3 +121,25 @@ def test_query_with_documents_but_zero_retrieved_chunks_refuses(client, monkeypa
     payload = response.json()
     assert payload["answer"].startswith("I do not know")
     assert payload["citations"] == []
+
+
+def test_query_vector_store_error_returns_clean_503(client, monkeypatch):
+    from backend.app.rag.vector_store import VectorStoreError
+
+    register_user(client, "admin@example.com")
+    headers = auth_headers(client, "admin@example.com")
+    workspace = create_workspace(client, headers)
+
+    def fail_search(self, workspace_id, vector, top_k):
+        raise VectorStoreError("Qdrant request failed. Check qdrant-client and server versions.")
+
+    monkeypatch.setattr("backend.app.services.query_service.VectorStore.search", fail_search)
+
+    response = client.post(
+        "/query",
+        json={"workspace_id": workspace["id"], "question": "What does KYC require?"},
+        headers=headers,
+    )
+
+    assert response.status_code == 503
+    assert "Qdrant request failed" in response.json()["detail"]

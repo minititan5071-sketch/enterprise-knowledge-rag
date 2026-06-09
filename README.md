@@ -233,6 +233,8 @@ Persistent local enterprise mode is the recommended demo path when using LM Stud
 
 The lightweight `VECTOR_STORE=memory` mode stores vectors inside the backend process. That is useful for tests, but vectors disappear after backend restart. Qdrant fixes this by storing vectors in the `qdrant_data` Docker volume.
 
+Qdrant server and `qdrant-client` versions must be compatible. This project uses `qdrant-client` 1.18.x from `requirements.txt`, so Docker Compose pins the server to `qdrant/qdrant:v1.18.0`. Do not mix `qdrant-client` 1.18.x with an old Qdrant server such as `qdrant/qdrant:v1.9.0`; the old server does not support the `/collections/{collection}/points/query` endpoint used by the newer client.
+
 ### Start LM Studio
 
 1. Open LM Studio on Windows.
@@ -508,6 +510,38 @@ Invoke-WebRequest http://localhost:1234/v1/models -UseBasicParsing
 ```
 
 From Docker containers, the backend uses `host.docker.internal`.
+
+### Qdrant `404` On `/points/query`
+
+Cause: Qdrant server and `qdrant-client` are incompatible. A common failing combination is:
+
+- Python package: `qdrant-client==1.18.0`
+- Docker image: `qdrant/qdrant:v1.9.0`
+
+The newer client calls:
+
+```text
+/collections/enterprise_knowledge_chunks/points/query
+```
+
+Qdrant `1.9.0` does not support that endpoint and returns `404`, which prevents retrieval.
+
+Fix:
+
+```powershell
+docker compose down
+docker compose pull qdrant
+docker compose up --build
+```
+
+Confirm `docker-compose.yml` uses:
+
+```yaml
+qdrant:
+  image: qdrant/qdrant:v1.18.0
+```
+
+Do not run `docker compose down -v` unless you intentionally want to delete the Qdrant vector volume. If you previously started the old image, a normal `docker compose down` followed by `docker compose up --build` preserves `qdrant_data` while using the corrected image.
 
 ## Security And Governance
 

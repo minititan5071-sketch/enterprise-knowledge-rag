@@ -1,5 +1,6 @@
 import math
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 from uuid import uuid5, NAMESPACE_URL
 
@@ -9,10 +10,12 @@ from backend.app.rag.chunking import Chunk
 
 try:
     from qdrant_client import QdrantClient
+    from qdrant_client.http.exceptions import UnexpectedResponse
     from qdrant_client.http.models import Distance, FieldCondition, Filter, MatchValue, PointStruct
     from qdrant_client.http.models import VectorParams
 except Exception:  # pragma: no cover - Qdrant is optional in local unit tests
     QdrantClient = None
+    UnexpectedResponse = Exception
     Distance = FieldCondition = Filter = MatchValue = PointStruct = VectorParams = None
 
 
@@ -26,6 +29,14 @@ logger = get_logger(__name__)
 class SearchHit:
     score: float
     payload: dict[str, Any]
+
+
+class VectorStoreError(RuntimeError):
+    pass
+
+
+class QdrantCompatibilityError(VectorStoreError):
+    pass
 
 
 class VectorStore:
@@ -68,7 +79,14 @@ class VectorStore:
                     payload={**chunk.metadata, "text": chunk.text},
                 )
             )
-        self.client.upsert(collection_name=self.collection, points=points)
+        try:
+            self.client.upsert(collection_name=self.collection, points=points)
+        except UnexpectedResponse as exc:
+            self._raise_qdrant_unexpected_response(
+                exc=exc,
+                operation="upsert_points",
+                endpoint=f"/collections/{self.collection}/points",
+            )
 
     def search(self, workspace_id: str, vector: list[float], top_k: int) -> list[SearchHit]:
         if self.use_memory:
@@ -77,32 +95,73 @@ class VectorStore:
         query_filter = Filter(
             must=[FieldCondition(key="workspace_id", match=MatchValue(value=workspace_id))]
         )
-        if hasattr(self.client, "query_points"):
-            result = self.client.query_points(
-                collection_name=self.collection,
-                query=vector,
-                query_filter=query_filter,
-                limit=top_k,
-                with_payload=True,
-            )
-            points = result.points
-        else:  # pragma: no cover - compatibility with older qdrant-client releases
-            points = self.client.search(
-                collection_name=self.collection,
-                query_vector=vector,
-                query_filter=query_filter,
-                limit=top_k,
-                with_payload=True,
+        try:
+            if hasattr(self.client, "query_points"):
+                result = self.client.query_points(
+                    collection_name=self.collection,
+                    query=vector,
+                    query_filter=query_filter,
+                    limit=top_k,
+                    with_payload=True,
+                )
+                points = result.points
+            else:  # pragma: no cover - compatibility with older qdrant-client releases
+                points = self.client.search(
+                    collection_name=self.collection,
+                    query_vector=vector,
+                    query_filter=query_filter,
+                    limit=top_k,
+                    with_payload=True,
+                )
+        except UnexpectedResponse as exc:
+            self._raise_qdrant_unexpected_response(
+                exc=exc,
+                operation="query_points",
+                endpoint=f"/collections/{self.collection}/points/query",
             )
         return [SearchHit(score=float(point.score), payload=point.payload or {}) for point in points]
 
     def _ensure_collection(self) -> None:
-        if self.client.collection_exists(self.collection):
-            return
-        self.client.create_collection(
-            collection_name=self.collection,
-            vectors_config=VectorParams(size=settings.embedding_dimension, distance=Distance.COSINE),
+        try:
+            if self.client.collection_exists(self.collection):
+                return
+            self.client.create_collection(
+                collection_name=self.collection,
+                vectors_config=VectorParams(size=settings.embedding_dimension, distance=Distance.COSINE),
+            )
+        except UnexpectedResponse as exc:
+            self._raise_qdrant_unexpected_response(
+                exc=exc,
+                operation="ensure_collection",
+                endpoint=f"/collections/{self.collection}",
+            )
+
+    def _raise_qdrant_unexpected_response(
+        self, exc: UnexpectedResponse, operation: str, endpoint: str
+    ) -> None:
+        status_code = getattr(exc, "status_code", None)
+        response_content = getattr(exc, "content", None)
+        compatibility_hint = (
+            "Qdrant server is likely incompatible with qdrant-client. "
+            "For qdrant-client 1.18.x, use qdrant/qdrant:v1.18.0 or another compatible recent server. "
+            "A 404 on /points/query usually means an older server such as 1.9.0 is running."
         )
+        logger.error(
+            "qdrant_unexpected_response",
+            operation=operation,
+            status_code=status_code,
+            endpoint=endpoint,
+            collection_name=self.collection,
+            qdrant_url=settings.qdrant_url,
+            qdrant_client_version=_qdrant_client_version(),
+            compatibility_hint=compatibility_hint,
+            response_content=_safe_response_content(response_content),
+        )
+        raise QdrantCompatibilityError(
+            "Qdrant request failed. Check qdrant-client and Qdrant server version compatibility. "
+            "For qdrant-client 1.18.x, use qdrant/qdrant:v1.18.0. "
+            f"Operation={operation}, endpoint={endpoint}, status_code={status_code}."
+        ) from exc
 
     def _memory_upsert(self, chunks: list[Chunk], vectors: list[list[float]]) -> None:
         for chunk, vector in zip(chunks, vectors, strict=True):
@@ -136,3 +195,17 @@ def _cosine(left: list[float], right: list[float]) -> float:
     left_norm = math.sqrt(sum(a * a for a in left)) or 1.0
     right_norm = math.sqrt(sum(b * b for b in right)) or 1.0
     return numerator / (left_norm * right_norm)
+
+
+def _qdrant_client_version() -> str:
+    try:
+        return version("qdrant-client")
+    except PackageNotFoundError:  # pragma: no cover - package missing fallback
+        return "unknown"
+
+
+def _safe_response_content(content: Any) -> str | None:
+    if content is None:
+        return None
+    text = content.decode("utf-8", errors="replace") if isinstance(content, bytes) else str(content)
+    return text[:500]
